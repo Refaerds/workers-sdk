@@ -39,6 +39,7 @@ minimumReleaseAge: 1440
 # First-party Cloudflare packages are exempt from the cooldown so they can be
 # adopted same-day.
 minimumReleaseAgeExclude:
+  - "am-i-vibing"
   - "workerd"
   # Platform-specific workerd binaries published in lock-step with workerd.
   - "@cloudflare/workerd-*"
