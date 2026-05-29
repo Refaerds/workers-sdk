@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	normalizeAndValidateConfig,
-	removeDir,
 	UserError,
 } from "@cloudflare/workers-utils";
 import { Headers, Request } from "miniflare";
@@ -107,7 +106,7 @@ export type WorkerServer = {
 	/**
 	 * Starts the server and returns its current URL.
 	 * Calling this more than once returns the same running server session until
-	 * the server is closed or reset by an operation such as `clearStorage()`.
+	 * the server is closed or reset.
 	 */
 	listen(): Promise<{
 		url: URL;
@@ -173,10 +172,11 @@ export type WorkerServer = {
 		options: ServerOptions | ((currentOptions: ServerOptions) => ServerOptions)
 	): Promise<void>;
 	/**
-	 * Clears local storage and restarts the server session.
-	 * The server URL may change after storage is cleared.
+	 * Restores the server to its initial `createServer()` options and restarts the
+	 * active server session. Ephemeral storage is recreated, but persisted storage
+	 * is left on disk. The server URL may change after reset.
 	 */
-	clearStorage(): Promise<void>;
+	reset(): Promise<void>;
 	/**
 	 * Stops the server and releases all runtime resources.
 	 */
@@ -234,8 +234,9 @@ type ServerSession = {
  * ```
  */
 export function createServer(options: ServerOptions): WorkerServer {
+	const initialOptions = options;
 	let currentOptions = options;
-	let desiredAccountId = options.accountId;
+	let resolvedAccountId: string | undefined;
 	let serverSession: ServerSession | undefined;
 	let startPromise: Promise<ServerSession> | undefined;
 
@@ -425,10 +426,17 @@ export function createServer(options: ServerOptions): WorkerServer {
 	async function serverAuthHook(
 		config: Pick<Config, "account_id">
 	): Promise<CfAccount> {
-		desiredAccountId ??= await requireAuth(config);
+		const accountId =
+			currentOptions.accountId ??
+			resolvedAccountId ??
+			(await requireAuth(config));
+
+		if (currentOptions.accountId === undefined) {
+			resolvedAccountId = accountId;
+		}
 
 		return {
-			accountId: desiredAccountId,
+			accountId,
 			apiToken: requireApiToken(),
 		};
 	}
@@ -601,7 +609,6 @@ export function createServer(options: ServerOptions): WorkerServer {
 				typeof updateInput === "function"
 					? updateInput(currentOptions)
 					: updateInput;
-			desiredAccountId = currentOptions.accountId ?? desiredAccountId;
 
 			if (serverSession) {
 				const nextInputs = resolveWorkerInputs(currentOptions);
@@ -623,25 +630,11 @@ export function createServer(options: ServerOptions): WorkerServer {
 				}
 			}
 		},
-		async clearStorage() {
+		async reset() {
 			const session = await resolveSession();
 
-			if (currentOptions.persist === true) {
-				throw new Error(
-					"clearStorage() cannot clear storage when persist is true. Omit persist or set it to false for ephemeral storage, or set persist to a path to clear that directory."
-				);
-			}
-
 			await teardownSession(session);
-
-			if (typeof currentOptions.persist === "string") {
-				const persistPath = resolvePath(
-					currentOptions.root ?? process.cwd(),
-					currentOptions.persist
-				);
-
-				await removeDir(persistPath);
-			}
+			currentOptions = initialOptions;
 
 			await startServerSession();
 		},

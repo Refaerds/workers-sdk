@@ -217,6 +217,16 @@ describe("createServer", { sequential: true }, () => {
 			name: "auxiliary",
 			url: "http://updated-auxiliary.example.com/path?value=3",
 		});
+
+		await server.reset();
+
+		const resetAuxiliaryResponse = await server.fetch(
+			"http://auxiliary.example.com/path?value=4"
+		);
+		await expect(resetAuxiliaryResponse.json()).resolves.toEqual({
+			name: "auxiliary",
+			url: "http://auxiliary.example.com/path?value=4",
+		});
 	});
 
 	it("rejects updates that change the number of workers", async ({
@@ -716,7 +726,7 @@ describe("createServer", { sequential: true }, () => {
 		await expect(resetResponse.text()).resolves.toBe("missing");
 	});
 
-	it("clears local storage", async ({ expect }) => {
+	it("resets server options and restarts the session", async ({ expect }) => {
 		await helper.seed({
 			"wrangler.jsonc": dedent`
 				{
@@ -748,7 +758,7 @@ describe("createServer", { sequential: true }, () => {
 		});
 		onTestFinished(server.close);
 
-		await expect(server.clearStorage()).rejects.toThrow(
+		await expect(server.reset()).rejects.toThrow(
 			"Worker server has not been started. Start it with server.listen() before calling this method."
 		);
 
@@ -783,10 +793,10 @@ describe("createServer", { sequential: true }, () => {
 		const persistentStoredResponse = await nextPersistentServer.fetch("/");
 		await expect(persistentStoredResponse.text()).resolves.toBe("value");
 
-		await nextPersistentServer.clearStorage();
+		await nextPersistentServer.reset();
 
-		const persistentClearedResponse = await nextPersistentServer.fetch("/");
-		await expect(persistentClearedResponse.text()).resolves.toBe("missing");
+		const persistentResetResponse = await nextPersistentServer.fetch("/");
+		await expect(persistentResetResponse.text()).resolves.toBe("value");
 		await nextPersistentServer.close();
 
 		const defaultPersistentServer = createServer({
@@ -797,9 +807,7 @@ describe("createServer", { sequential: true }, () => {
 		onTestFinished(defaultPersistentServer.close);
 		await defaultPersistentServer.listen();
 
-		await expect(defaultPersistentServer.clearStorage()).rejects.toThrow(
-			"clearStorage() cannot clear storage when persist is true."
-		);
+		await defaultPersistentServer.reset();
 	});
 
 	it("exposes the inspector URL when enabled", async ({ expect }) => {
